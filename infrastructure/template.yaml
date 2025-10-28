@@ -1,0 +1,94 @@
+service: pedidos-geolocalizacao
+frameworkVersion: "3"
+
+provider:
+  name: aws
+  runtime: python3.12
+  region: sa-east-1
+  environment:
+    TABELA_GALPOES: ${self:service}-galpoes
+    TABELA_PEDIDOS: ${self:service}-pedidos
+    QUEUE_GEOLOCALIZACAO_PROCESSADA: https://sqs.${self:provider.region}.amazonaws.com/123456789012/${self:service}-geolocalizacao-processada
+    QUEUE_PEDIDOS_CONFIRMADOS: https://sqs.${self:provider.region}.amazonaws.com/123456789012/${self:service}-pedidos-confirmados
+    SNS_TOPIC_ARN: arn:aws:sns:${self:provider.region}:123456789012:${self:service}-notificacoes
+
+iam:
+  role:
+    statements:
+      - Effect: Allow
+        Action:
+          - dynamodb:*
+          - sqs:*
+          - sns:*
+        Resource: "*"
+
+functions:
+  confirmarPedido:
+    handler: confirmar_pedido.lambda_handler
+    description: Recebe pedidos via API Gateway, salva no DynamoDB e envia para SQS.
+    events:
+      - httpApi:
+          path: /pedidos
+          method: post
+
+  processarGeolocalizacao:
+    handler: processar_geolocalizacao.lambda_handler
+    description: Calcula o galpão mais próximo e envia para a fila de pedidos processados.
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt: [FilaPedidosConfirmados, Arn]
+
+  despacharPedido:
+    handler: despachar_pedido.lambda_handler
+    description: Atualiza status do pedido e envia notificação SNS.
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt: [FilaGeolocalizacaoProcessada, Arn]
+
+resources:
+  Resources:
+    # DynamoDB - Pedidos
+    TabelaPedidos:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-pedidos
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: pedido_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: pedido_id
+            KeyType: HASH
+
+    # DynamoDB - Galpões
+    TabelaGalpoes:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-galpoes
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+
+    # SQS - Fila 1 (pedidos confirmados)
+    FilaPedidosConfirmados:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-pedidos-confirmados
+
+    # SQS - Fila 2 (geolocalização processada)
+    FilaGeolocalizacaoProcessada:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-geolocalizacao-processada
+
+    # SNS - Notificações
+    TopicoSNS:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: ${self:service}-notificacoes
