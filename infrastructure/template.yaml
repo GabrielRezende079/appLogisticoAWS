@@ -24,7 +24,7 @@ iam:
 
 functions:
   confirmarPedido:
-    handler: confirmar_pedido.lambda_handler
+    handler: Functions/Lambda_ConfirmaPedidoExistente/ConfirmaPedidoExistente.lambda_handler
     description: Recebe pedidos via API Gateway, salva no DynamoDB e envia para SQS.
     events:
       - httpApi:
@@ -32,7 +32,7 @@ functions:
           method: post
 
   processarGeolocalizacao:
-    handler: processar_geolocalizacao.lambda_handler
+    handler: Functions/Lambda_CalculaGeolocalizacao/CalculaGeolocalizacao.lambda_handler
     description: Calcula o galpão mais próximo e envia para a fila de pedidos processados.
     events:
       - sqs:
@@ -40,7 +40,7 @@ functions:
             Fn::GetAtt: [FilaPedidosConfirmados, Arn]
 
   despacharPedido:
-    handler: despachar_pedido.lambda_handler
+    handler: Functions/Lambda_ProcessaEnvio/ProcessaEnvio.lambda_handler
     description: Atualiza status do pedido e envia notificação SNS.
     events:
       - sqs:
